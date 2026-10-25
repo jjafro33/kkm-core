@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="author" content="J.Jafro, R.T.Beslin">
 <title>KKM CORE PDFS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{--bg:#070816;--ink:#eef0ff;--mute:#9aa0c8;--glass:rgba(255,255,255,.06);--line:rgba(255,255,255,.13);--a:#7c5cff;--b:#22d3ee;--c:#ff5ca8;--d:#ffc233;--danger:#ff8a9b}
 @media(prefers-color-scheme:light){:root{--bg:#f2f1ff;--ink:#15153a;--mute:#5d6090;--glass:rgba(255,255,255,.72);--line:rgba(80,70,160,.2);--danger:#c0213c}}
@@ -98,6 +100,21 @@ dialog form{display:flex;flex-direction:column;gap:10px}
 .setup{position:relative;z-index:2;background:#ffe9a8;color:#3d3000;padding:14px 20px;text-align:center}
 footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:30px;font-size:.85rem}
 [hidden]{display:none!important}
+.viewer{position:fixed;inset:0;z-index:80;display:flex;padding:clamp(0px,2.5vw,26px);background:rgba(5,5,20,.72);backdrop-filter:blur(10px);animation:fade .3s both}
+.vwin{flex:1;display:flex;flex-direction:column;min-width:0;border-radius:22px;overflow:hidden;background:var(--bg);border:1px solid var(--line);box-shadow:0 30px 80px -20px var(--a);animation:pop .45s cubic-bezier(.2,1.3,.4,1)}
+.vbar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--glass);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.vbar b{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vbar small{color:var(--mute)}
+.vbar button{padding:6px 14px}
+.vbody{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:14px;background:radial-gradient(900px circle at 20% 0,rgba(124,92,255,.18),transparent 60%),radial-gradient(700px circle at 90% 100%,rgba(34,211,238,.14),transparent 60%)}
+.pgc{max-width:none;border-radius:8px;background:#fff;box-shadow:0 16px 40px -14px #000;animation:pgIn .5s both}
+@keyframes pgIn{from{opacity:0;transform:translateY(24px) scale(.97)}}
+.vframe{width:100%;flex:1;min-height:70vh;border:0;border-radius:12px;background:#fff}
+.vimg{max-width:100%;border-radius:12px}
+.vmsg{margin:auto;text-align:center;color:var(--mute)}
+.spin{width:42px;height:42px;margin:0 auto 12px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--b);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.cred{background:linear-gradient(100deg,var(--b),var(--c),var(--d),var(--b));background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:shine 5s linear infinite;font-weight:900}
 .crumb{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 0;color:var(--mute)}
 .crumb a{color:var(--b);cursor:pointer;font-weight:700}
 .fl{color:var(--b);text-decoration:none}
@@ -168,7 +185,7 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
   <h2 class="h" id="postsTitle">Latest posts</h2>
   <div class="posts" id="posts"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
 </section>
-<footer>KKM CORE PDFS &middot; Made for students</footer>
+<footer>KKM CORE PDFS &middot; Made for students<br>Built by <span class="cred">J.Jafro</span> &amp; <span class="cred">R.T.Beslin</span></footer>
 </div>
 
 <dialog id="loginDlg">
@@ -181,6 +198,18 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
     <button type="button" class="ghost" onclick="loginDlg.close()">Cancel</button>
   </form>
 </dialog>
+<div class="viewer" id="viewer" hidden>
+  <div class="vwin" role="dialog" aria-modal="true" aria-label="File viewer">
+    <div class="vbar">
+      <b id="vTitle"></b><small id="vPage"></small>
+      <button class="ghost" id="zOut" aria-label="Zoom out">&minus;</button>
+      <button class="ghost" id="zIn" aria-label="Zoom in">+</button>
+      <button class="ghost" id="vDl">Download</button>
+      <button id="vClose">&#10005; Close</button>
+    </div>
+    <div class="vbody" id="vBody"></div>
+  </div>
+</div>
 <div id="toast" role="status"></div>
 
 <script>
@@ -316,9 +345,9 @@ function render(){
       <h3>${esc(p.title)}${isNew?'<span class="new">NEW</span>':""}</h3>
       <div class="meta"><a class="fl" href="#${p.folder_id}">${esc(fName(p.folder_id))}</a> &middot; ${new Date(p.created_at).toLocaleDateString()} &middot; ${p.post_files.length} file${p.post_files.length===1?"":"s"}</div>
       ${p.description?`<p>${esc(p.description)}</p>`:""}
-      ${p.post_files.map(x=>`<div class="file"><span class="badge">${esc((x.file_name.split(".").pop()||"FILE").slice(0,4).toUpperCase())}</span><span class="n">${esc(x.file_name)}</span>
-        <a class="btn" href="${esc(x.file_url)}" target="_blank" rel="noopener">View</a>
-        <a class="btn ghost" href="${esc(x.file_url)}" download="${esc(x.file_name)}">Download</a>
+      ${p.post_files.map(x=>`<div class="file"><span class="badge">${esc((x.file_name.split(".").pop()||"FILE").slice(0,4).toUpperCase())}</span><span class="n" data-view="${x.id}" style="cursor:pointer">${esc(x.file_name)}</span>
+        <button class="btn" data-view="${x.id}">View</button>
+        <button class="btn ghost" data-dl="${x.id}">Download</button>
         ${isTeacher?`<button class="del" data-delfile="${x.id}">Remove</button>`:""}</div>`).join("")}
       ${isTeacher?`<div style="margin-top:8px"><button class="del" data-delpost="${p.id}">Delete post</button></div>`:""}
     </article>`}).join("")
@@ -396,6 +425,12 @@ $("addForm").onsubmit=async e=>{
   btn.disabled=false;
 };
 $("posts").onclick=async e=>{
+  const vb=e.target.closest("[data-view]"), db=e.target.closest("[data-dl]");
+  if(vb||db){
+    const f=posts.flatMap(p=>p.post_files).find(x=>x.id===(vb||db).dataset[vb?"view":"dl"]);
+    if(f) vb?openFile(f.file_name,f.file_url):downloadFile(f.file_name,f.file_url);
+    return;
+  }
   const dp=e.target.dataset.delpost, df=e.target.dataset.delfile;
   if(dp&&confirm("Delete this post and all its files?")){
     const paths=posts.find(x=>x.id===dp).post_files.map(x=>x.file_path).filter(Boolean);
@@ -410,6 +445,49 @@ $("posts").onclick=async e=>{
     toast(error?error.message:"File removed");load();
   }
 };
+/* ===== in-site file viewer (popup) ===== */
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+let vz=1,vPdf=null,vTok=0,vCur=null;
+const fext=n=>(n.split(".").pop()||"").toLowerCase();
+async function downloadFile(name,url){
+  try{const b=await (await fetch(url)).blob(),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
+  catch(e){window.open(url,"_blank")}
+}
+function vMsg(h){$("vBody").innerHTML=`<div class="vmsg">${h}</div>`}
+async function openFile(name,url){
+  const t=++vTok,e=fext(name); vCur={name,url}; vz=1;
+  $("vTitle").textContent=name; $("vPage").textContent="";
+  const isPdf=e==="pdf"; $("zIn").hidden=$("zOut").hidden=!isPdf;
+  $("viewer").hidden=false; document.body.style.overflow="hidden";
+  vMsg('<div class="spin"></div>Opening...');
+  if(isPdf){
+    try{ vPdf=await pdfjsLib.getDocument(url).promise; if(t!==vTok) return;
+      $("vPage").textContent=vPdf.numPages+" page"+(vPdf.numPages===1?"":"s"); await drawPdf(t);
+    }catch(err){ if(t===vTok) vMsg("This PDF could not be previewed here.<br>Use the Download button to open it.") }
+  }else if(["png","jpg","jpeg","gif","webp","svg"].includes(e)){
+    $("vBody").innerHTML=`<img class="vimg" src="${esc(url)}" alt="${esc(name)}">`;
+  }else if(["doc","docx","ppt","pptx","xls","xlsx"].includes(e)){
+    $("vBody").innerHTML=`<iframe class="vframe" src="https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}"></iframe>`;
+  }else if(["txt","md","csv"].includes(e)){
+    try{ const tx=await (await fetch(url)).text(); if(t===vTok) $("vBody").innerHTML=`<pre style="white-space:pre-wrap;width:100%;margin:0">${esc(tx)}</pre>` }catch(err){ vMsg("Could not load this file.") }
+  }else vMsg("No preview for this file type.<br>Use the Download button.");
+}
+async function drawPdf(t){
+  const body=$("vBody"),dpr=devicePixelRatio||1,w=Math.min(body.clientWidth-32,1000)*vz; body.innerHTML="";
+  for(let i=1;i<=vPdf.numPages;i++){
+    if(t!==vTok) return;
+    const pg=await vPdf.getPage(i),sc=w/pg.getViewport({scale:1}).width,vp=pg.getViewport({scale:sc*dpr});
+    const c=document.createElement("canvas"); c.className="pgc"; c.width=vp.width; c.height=vp.height; c.style.width=vp.width/dpr+"px"; body.appendChild(c);
+    await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+  }
+}
+function zoom(d){ if(!vPdf) return; vz=Math.min(2.5,Math.max(.6,vz+d)); drawPdf(++vTok) }
+function closeViewer(){ vTok++; vPdf=null; $("viewer").hidden=true; $("vBody").innerHTML=""; document.body.style.overflow="" }
+$("zIn").onclick=()=>zoom(.25); $("zOut").onclick=()=>zoom(-.25);
+$("vClose").onclick=closeViewer; $("vDl").onclick=()=>vCur&&downloadFile(vCur.name,vCur.url);
+$("viewer").onclick=e=>{ if(e.target===$("viewer")) closeViewer() };
+addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("viewer").hidden) closeViewer() });
+
 init();
 </script>
 </body>
