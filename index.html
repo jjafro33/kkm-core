@@ -97,6 +97,12 @@ dialog form{display:flex;flex-direction:column;gap:10px}
 #toast.show{transform:translate(-50%,0)}
 .setup{position:relative;z-index:2;background:#ffe9a8;color:#3d3000;padding:14px 20px;text-align:center}
 footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:30px;font-size:.85rem}
+[hidden]{display:none!important}
+.crumb{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 0;color:var(--mute)}
+.crumb a{color:var(--b);cursor:pointer;font-weight:700}
+.fl{color:var(--b);text-decoration:none}
+.new{font-size:.65rem;font-weight:900;background:var(--d);color:#2b2100;padding:2px 8px;border-radius:99px;margin-left:8px;vertical-align:middle}
+.hint{font-size:.82rem;color:var(--d)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
 </style>
 </head>
@@ -141,6 +147,7 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
       <label for="pDesc">Description (optional)</label><textarea id="pDesc" rows="2"></textarea>
       <label for="pFiles">PDFs or notes</label><input id="pFiles" type="file" multiple required>
       <div class="prog"><i></i></div>
+      <div class="hint" id="pHint"></div>
       <button>Upload post</button>
     </form>
     <form id="addForm">
@@ -148,15 +155,17 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
       <label for="aPost">Post</label><select id="aPost" required></select>
       <label for="aFiles">PDFs or notes</label><input id="aFiles" type="file" multiple required>
       <div class="prog"><i></i></div>
+      <div class="hint" id="aHint"></div>
       <button>Add files</button>
     </form>
   </div>
 </section>
 
 <section class="blk">
-  <h2 class="h">Pick a folder</h2>
+  <div class="crumb" id="crumb"></div>
+  <h2 class="h" id="foldersTitle">1. Pick a folder</h2>
   <div class="tiles" id="folders"></div>
-  <h2 class="h" id="postsTitle">All posts</h2>
+  <h2 class="h" id="postsTitle">Latest posts</h2>
   <div class="posts" id="posts"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
 </section>
 <footer>KKM CORE PDFS &middot; Made for students</footer>
@@ -179,6 +188,7 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
 const SUPABASE_URL = "https://yipbvsrjcqfihmqquvsd.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpcGJ2c3JqY3FmaWhtcXF1dnNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5MTExNjQsImV4cCI6MjEwODQ4NzE2NH0.yXtwo7rwGx9DycKoRtbI7D2PIgx59jFWSoxIlLFXq6I";
 const BUCKET = "pdfs";
+const MAX_MB = 50; // Supabase free plan limit per file
 const TEACHER_USER = "kkm123";   // teacher username (checked in code)
 const TEACHER_PASS = "admin123"; // teacher password (checked in code)
 /* =============================================== */
@@ -263,31 +273,48 @@ async function load(){
     sb.from("posts").select("*, post_files(*)").order("created_at",{ascending:false})
   ]);
   if(f.error||p.error){ toast("Could not load data: "+(f.error||p.error).message); return; }
-  folders=f.data; posts=p.data; render();
+  folders=f.data; posts=p.data; current=location.hash.slice(1)||"all"; render();
 }
 
 function render(){
   const q=$("q").value.trim().toLowerCase();
-  const cnt=id=>posts.filter(p=>p.folder_id===id).length;
-  const tile=(id,ic,g,name,n,i)=>`<button class="tilt tile rv ${current===id?"on":""}" style="--k:${i};--g1:${g[0]};--g2:${g[1]}" data-f="${id}"><span class="ico">${ic}</span><span>${esc(name)}<small>${n} post${n===1?"":"s"}</small></span></button>`;
-  $("folders").innerHTML = tile("all","✨",GRADS[0],"All posts",posts.length,0) +
-    folders.map((f,i)=>tile(f.id,ICONS[i%ICONS.length],GRADS[(i+1)%GRADS.length],f.name,cnt(f.id),i+1)).join("");
-
-  $("pFolder").innerHTML=folders.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join("");
-  const keep=$("aPost").value;
-  $("aPost").innerHTML=posts.map(p=>`<option value="${p.id}">${esc((folders.find(f=>f.id===p.folder_id)||{}).name||"")} / ${esc(p.title)}</option>`).join("");
-  if(keep) $("aPost").value=keep;
-
-  const list=posts.filter(p=>(current==="all"||p.folder_id===current)&&
-    (!q||(p.title+" "+(p.description||"")+" "+p.post_files.map(x=>x.file_name).join(" ")).toLowerCase().includes(q)));
+  const fName=id=>(folders.find(f=>f.id===id)||{}).name||"";
+  if(current!=="all"&&folders.length&&!folders.some(f=>f.id===current)) current="all";
   const cf=folders.find(f=>f.id===current);
-  $("postsTitle").textContent = cf?cf.name:"All posts";
+  const home=current==="all"&&!q;
+  const cnt=id=>posts.filter(p=>p.folder_id===id).length;
+
+  $("crumb").innerHTML = q ? `<a data-home>Home</a> &rsaquo; Search results`
+    : cf ? `<a data-home>&larr; Home</a> &rsaquo; <b style="color:var(--ink)">${esc(cf.name)}</b>${isTeacher?` <button class="del" data-delfolder="${cf.id}">Delete folder</button>`:""}` : "";
+  $("foldersTitle").hidden=$("folders").hidden=!home;
+  $("folders").innerHTML = folders.length ? folders.map((f,i)=>{
+    const g=GRADS[i%GRADS.length],n=cnt(f.id);
+    return `<button class="tilt tile rv" style="--k:${i};--g1:${g[0]};--g2:${g[1]}" data-f="${f.id}"><span class="ico">${ICONS[i%ICONS.length]}</span><span>${esc(f.name)}<small>${n} post${n===1?"":"s"}</small></span></button>`}).join("")
+    : `<div class="empty"><b>🗂️</b>No folders yet.${isTeacher?" Create the first folder in the teacher panel.":" Teachers will add notes soon."}</div>`;
+
+  /* teacher forms: default to the folder being viewed, and block impossible actions */
+  const pf=$("pFolder").value, ak=$("aPost").value;
+  $("pFolder").innerHTML=folders.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join("");
+  $("pFolder").value = cf ? cf.id : (pf||(folders[0]||{}).id||"");
+  const addList = cf ? posts.filter(p=>p.folder_id===cf.id) : posts;
+  $("aPost").innerHTML=addList.map(p=>`<option value="${p.id}">${esc(fName(p.folder_id))} / ${esc(p.title)}</option>`).join("");
+  if(ak) $("aPost").value=ak;
+  $("postForm").querySelector("button").disabled=!folders.length;
+  $("addForm").querySelector("button").disabled=!addList.length;
+  $("pHint").textContent=folders.length?"":"Create a folder first.";
+  $("aHint").textContent=addList.length?"":"No posts here yet. Create a post first.";
+
+  let list=posts.filter(p=>q ? (p.title+" "+(p.description||"")+" "+fName(p.folder_id)+" "+p.post_files.map(x=>x.file_name).join(" ")).toLowerCase().includes(q)
+                             : (home||p.folder_id===current));
+  if(home) list=list.slice(0,6);
+  $("postsTitle").textContent = q ? `${list.length} result${list.length===1?"":"s"} for "${$("q").value.trim()}"` : home ? "2. Latest posts" : `Posts in ${cf?cf.name:""}`;
+  $("postsTitle").hidden = home && !list.length;
 
   $("posts").innerHTML = list.length ? list.map((p,i)=>{
-    const fn=(folders.find(f=>f.id===p.folder_id)||{}).name||"";
+    const isNew=Date.now()-new Date(p.created_at)<7*864e5;
     return `<article class="tilt post rv" style="--k:${i%6}">
-      <h3>${esc(p.title)}</h3>
-      <div class="meta">${esc(fn)} &middot; ${new Date(p.created_at).toLocaleDateString()}</div>
+      <h3>${esc(p.title)}${isNew?'<span class="new">NEW</span>':""}</h3>
+      <div class="meta"><a class="fl" href="#${p.folder_id}">${esc(fName(p.folder_id))}</a> &middot; ${new Date(p.created_at).toLocaleDateString()} &middot; ${p.post_files.length} file${p.post_files.length===1?"":"s"}</div>
       ${p.description?`<p>${esc(p.description)}</p>`:""}
       ${p.post_files.map(x=>`<div class="file"><span class="badge">${esc((x.file_name.split(".").pop()||"FILE").slice(0,4).toUpperCase())}</span><span class="n">${esc(x.file_name)}</span>
         <a class="btn" href="${esc(x.file_url)}" target="_blank" rel="noopener">View</a>
@@ -295,7 +322,7 @@ function render(){
         ${isTeacher?`<button class="del" data-delfile="${x.id}">Remove</button>`:""}</div>`).join("")}
       ${isTeacher?`<div style="margin-top:8px"><button class="del" data-delpost="${p.id}">Delete post</button></div>`:""}
     </article>`}).join("")
-    : `<div class="empty"><b>📭</b>No posts here yet.${isTeacher?" Upload one from the teacher panel.":""}</div>`;
+    : (home && folders.length ? "" : `<div class="empty"><b>📭</b>${q?"Nothing matches your search.":"No posts in this folder yet."}${isTeacher&&!q?" Upload one from the teacher panel.":""}</div>`);
 
   countUp(document.querySelector('[data-c="folders"]'),folders.length);
   countUp(document.querySelector('[data-c="posts"]'),posts.length);
@@ -303,7 +330,18 @@ function render(){
   reveal();
 }
 
+async function delFolder(id){
+  const f=folders.find(x=>x.id===id), ps=posts.filter(p=>p.folder_id===id);
+  if(!confirm(`Delete folder "${f.name}" with ${ps.length} post(s) and all their files?`)) return;
+  const paths=ps.flatMap(p=>p.post_files.map(x=>x.file_path)).filter(Boolean);
+  if(paths.length) await sb.storage.from(BUCKET).remove(paths);
+  const {error}=await sb.from("folders").delete().eq("id",id);
+  if(error) return toast(error.message);
+  toast("Folder deleted"); location.hash=""; load();
+}
+
 async function uploadFiles(postId, files, bar){
+  for(const f of files) if(f.size>MAX_MB*1048576) throw new Error(`"${f.name}" is over ${MAX_MB} MB`);
   let done=0; const pr=bar.parentElement; pr.style.display="block"; bar.style.width="0";
   for(const file of files){
     const safe=file.name.replace(/[^\w.\-]+/g,"_"), path=`${postId}/${Date.now()}_${safe}`;
@@ -318,7 +356,13 @@ async function uploadFiles(postId, files, bar){
 }
 const barOf=f=>f.querySelector(".prog i");
 
-$("folders").onclick=e=>{const b=e.target.closest("button[data-f]");if(b){current=b.dataset.f==="all"?"all":b.dataset.f;render();$("postsTitle").scrollIntoView({behavior:"smooth",block:"start"})}};
+function route(){current=location.hash.slice(1)||"all";$("q").value="";render();document.querySelector(".blk").scrollIntoView({behavior:"smooth"})}
+addEventListener("hashchange",route);
+$("folders").onclick=e=>{const b=e.target.closest("button[data-f]");if(b) location.hash=b.dataset.f};
+$("crumb").onclick=e=>{
+  if(e.target.closest("[data-home]")){ if(location.hash) location.hash=""; else {$("q").value="";render()} }
+  const d=e.target.dataset.delfolder; if(d) delFolder(d);
+};
 $("q").oninput=render;
 $("loginBtn").onclick=()=>{$("loginErr").textContent="";$("loginDlg").showModal()};
 $("logoutBtn").onclick=()=>{isTeacher=false;try{localStorage.removeItem("kkm_teacher")}catch(e){}applyTeacher();toast("Logged out")};
@@ -332,7 +376,7 @@ $("loginForm").onsubmit=async e=>{
 $("folderForm").onsubmit=async e=>{
   e.preventDefault();
   const {error}=await sb.from("folders").insert({name:$("fName").value.trim()});
-  if(error) return toast(error.message);
+  if(error) return toast(error.code==="23505"?"A folder with this name already exists":error.message);
   $("fName").value="";toast("Folder created");load();
 };
 $("postForm").onsubmit=async e=>{
@@ -341,7 +385,7 @@ $("postForm").onsubmit=async e=>{
     const {data,error}=await sb.from("posts").insert({folder_id:$("pFolder").value,title:$("pTitle").value.trim(),description:$("pDesc").value.trim()}).select().single();
     if(error) throw error;
     await uploadFiles(data.id,$("pFiles").files,barOf(f));
-    f.reset();toast("Post uploaded");current=data.folder_id;await load();
+    f.reset();toast("Post uploaded");location.hash=data.folder_id;await load();
   }catch(err){toast(err.message)}
   btn.disabled=false;
 };
