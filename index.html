@@ -304,7 +304,7 @@ function render(){
 }
 
 async function uploadFiles(postId, files, bar){
-  let done=0; const pr=bar.parentElement.querySelector(".prog"); pr.style.display="block"; bar.style.width="0";
+  let done=0; const pr=bar.parentElement; pr.style.display="block"; bar.style.width="0";
   for(const file of files){
     const safe=file.name.replace(/[^\w.\-]+/g,"_"), path=`${postId}/${Date.now()}_${safe}`;
     const up=await sb.storage.from(BUCKET).upload(path,file,{contentType:file.type||undefined});
