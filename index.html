@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="author" content="J.Jafro, R.T.Beslin">
 <title>KKM CORE PDFS</title>
+<link rel="icon" href="kkm.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -24,7 +25,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","
 .wrap{position:relative;z-index:1}
 nav{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:12px 22px;background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
 .logo{font-weight:900;letter-spacing:.06em;flex:1;display:flex;align-items:center;gap:10px}
-.logo b{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,var(--a),var(--c));color:#fff;animation:pulse 3s ease-in-out infinite}
+.logo img{width:48px;height:48px;object-fit:contain;flex:none;border-radius:50%}
 @keyframes pulse{50%{box-shadow:0 0 0 10px rgba(124,92,255,0);transform:rotate(-8deg) scale(1.08)}0%,100%{box-shadow:0 0 0 0 rgba(124,92,255,.5)}}
 button,.btn{font:inherit;font-weight:700;cursor:pointer;position:relative;overflow:hidden;border:0;color:#fff;padding:9px 18px;border-radius:12px;text-decoration:none;display:inline-block;background:linear-gradient(120deg,var(--a),var(--c),var(--a));background-size:200% 100%;transition:background-position .5s,transform .2s,box-shadow .3s;box-shadow:0 6px 20px -6px var(--a)}
 button:hover,.btn:hover{background-position:100% 0;transform:translateY(-2px);box-shadow:0 12px 26px -8px var(--c)}
@@ -127,11 +128,10 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
 <div id="bar"></div>
 <canvas id="fx"></canvas>
 <div class="aurora"><i></i><i></i><i></i></div>
-<div id="setup" class="setup" hidden>Open this file and add your Supabase URL and anon key at the top of the script.</div>
 
 <div class="wrap">
 <nav>
-  <div class="logo"><b>K</b>KKM CORE PDFS</div>
+  <div class="logo"><img src="kkm.png" alt="" aria-hidden="true">KKM CORE PDFS</div>
   <button id="loginBtn">Teacher login</button>
   <button id="logoutBtn" class="ghost" hidden>Log out</button>
 </nav>
