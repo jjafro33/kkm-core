@@ -280,6 +280,12 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
 const ICONS = ["📘","🧬","📐","🔬","🌍","💻","🎨","📖","⚗️","🧮"];
 const GRADS = [["#7c5cff","#22d3ee"],["#ff5ca8","#ffc233"],["#22d3ee","#34d399"],["#ff7a45","#ff5ca8"],["#a78bfa","#f472b6"]];
+/* Link folders: external folders (e.g. Google Drive) shown beside the normal folders */
+const LINK_FOLDERS = [
+  {id:"gdrive-1xRNLjRK9wW8DphOSPuF2SRIGjRC-bUad", name:"Chemistry 360", icon:"📁", g:["#34d399","#22d3ee"],
+   url:"https://drive.google.com/drive/folders/1xRNLjRK9wW8DphOSPuF2SRIGjRC-bUad",
+   embed:"https://drive.google.com/embeddedfolderview?id=1xRNLjRK9wW8DphOSPuF2SRIGjRC-bUad#grid"}
+];
 let sb, folders = [], posts = [], current = "all", isTeacher = (()=>{try{return localStorage.getItem("kkm_teacher")==="1"}catch(e){return false}})(), tt;
 
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),3000)}
@@ -361,17 +367,20 @@ async function load(){
 function render(){
   const q=$("q").value.trim().toLowerCase();
   const fName=id=>(folders.find(f=>f.id===id)||{}).name||"";
-  if(current!=="all"&&folders.length&&!folders.some(f=>f.id===current)) current="all";
+  const lf=LINK_FOLDERS.find(l=>l.id===current);
+  if(current!=="all"&&!lf&&folders.length&&!folders.some(f=>f.id===current)) current="all";
   const cf=folders.find(f=>f.id===current);
   const home=current==="all"&&!q;
   const cnt=id=>posts.filter(p=>p.folder_id===id).length;
 
   $("crumb").innerHTML = q ? `<a data-home>Home</a> &rsaquo; Search results`
+    : lf ? `<a data-home>&larr; Home</a> &rsaquo; <b style="color:var(--ink)">${esc(lf.name)}</b>`
     : cf ? `<a data-home>&larr; Home</a> &rsaquo; <b style="color:var(--ink)">${esc(cf.name)}</b>${isTeacher?` <button class="del" data-delfolder="${cf.id}">Delete folder</button>`:""}` : "";
   $("foldersTitle").hidden=$("folders").hidden=!home;
-  $("folders").innerHTML = folders.length ? folders.map((f,i)=>{
+  const linkTiles = LINK_FOLDERS.map((l,i)=>`<button class="tilt tile rv" style="--k:${folders.length+i};--g1:${l.g[0]};--g2:${l.g[1]}" data-f="${l.id}"><span class="ico">${l.icon}</span><span>${esc(l.name)}<small>Google Drive</small></span></button>`).join("");
+  $("folders").innerHTML = (folders.length||LINK_FOLDERS.length) ? folders.map((f,i)=>{
     const g=GRADS[i%GRADS.length],n=cnt(f.id);
-    return `<button class="tilt tile rv" style="--k:${i};--g1:${g[0]};--g2:${g[1]}" data-f="${f.id}"><span class="ico">${ICONS[i%ICONS.length]}</span><span>${esc(f.name)}<small>${n} post${n===1?"":"s"}</small></span></button>`}).join("")
+    return `<button class="tilt tile rv" style="--k:${i};--g1:${g[0]};--g2:${g[1]}" data-f="${f.id}"><span class="ico">${ICONS[i%ICONS.length]}</span><span>${esc(f.name)}<small>${n} post${n===1?"":"s"}</small></span></button>`}).join("")+linkTiles
     : `<div class="empty"><b>🗂️</b>No folders yet.${isTeacher?" Create the first folder in the teacher panel.":" Teachers will add notes soon."}</div>`;
 
   /* teacher forms: default to the folder being viewed, and block impossible actions */
@@ -386,6 +395,15 @@ function render(){
   $("pHint").textContent=folders.length?"":"Create a folder first.";
   $("aHint").textContent=addList.length?"":"No posts here yet. Create a post first.";
 
+  if(lf && !q){
+    $("postsTitle").hidden=false; $("postsTitle").textContent=`Files in ${lf.name}`;
+    $("posts").innerHTML=`<div style="grid-column:1/-1"><p class="meta" style="margin:0 0 10px">Make sure the folder is shared as "Anyone with the link" so students can see it. <a class="btn" href="${lf.url}" target="_blank" rel="noopener">Open in Google Drive</a></p><iframe class="vframe" style="min-height:75vh" src="${lf.embed}" title="${esc(lf.name)}" loading="lazy"></iframe></div>`;
+    countUp(document.querySelector('[data-c="folders"]'),folders.length+LINK_FOLDERS.length);
+    countUp(document.querySelector('[data-c="posts"]'),posts.length);
+    countUp(document.querySelector('[data-c="files"]'),posts.reduce((a,p)=>a+p.post_files.length,0));
+    reveal();
+    return;
+  }
   let list=posts.filter(p=>q ? (p.title+" "+(p.description||"")+" "+fName(p.folder_id)+" "+p.post_files.map(x=>x.file_name).join(" ")).toLowerCase().includes(q)
                              : (home||p.folder_id===current));
   if(home) list=list.slice(0,6);
@@ -406,7 +424,7 @@ function render(){
     </article>`}).join("")
     : (home && folders.length ? "" : `<div class="empty"><b>📭</b>${q?"Nothing matches your search.":"No posts in this folder yet."}${isTeacher&&!q?" Upload one from the teacher panel.":""}</div>`);
 
-  countUp(document.querySelector('[data-c="folders"]'),folders.length);
+  countUp(document.querySelector('[data-c="folders"]'),folders.length+LINK_FOLDERS.length);
   countUp(document.querySelector('[data-c="posts"]'),posts.length);
   countUp(document.querySelector('[data-c="files"]'),posts.reduce((a,p)=>a+p.post_files.length,0));
   reveal();
