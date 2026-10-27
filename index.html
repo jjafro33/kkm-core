@@ -205,6 +205,16 @@ footer{position:relative;z-index:1;text-align:center;color:var(--mute);padding:3
       <div class="hint" id="aHint"></div>
       <button>Add files</button>
     </form>
+    <form id="dirForm">
+      <strong>Upload a whole folder</strong>
+      <label for="dFiles">Choose a folder from this computer</label>
+      <input id="dFiles" type="file" webkitdirectory directory multiple required>
+      <label for="dName">Folder name on the site</label>
+      <input id="dName" required maxlength="80" placeholder="Filled in from the folder you pick">
+      <div class="hint" id="dInfo">Each sub-folder becomes one post. Works best on a computer.</div>
+      <div class="prog"><i></i></div>
+      <button>Upload folder</button>
+    </form>
   </div>
 </section>
 
@@ -479,6 +489,58 @@ $("addForm").onsubmit=async e=>{
   try{ await uploadFiles($("aPost").value,$("aFiles").files,barOf(f)); f.reset();toast("Files added");await load(); }
   catch(err){toast(err.message)}
   btn.disabled=false;
+};
+/* ===== upload a whole folder ===== */
+const JUNK=/^(thumbs\.db|desktop\.ini)$/i;
+function planDir(list){
+  const groups=new Map(); let root="",big=0;
+  for(const f of list){
+    const parts=(f.webkitRelativePath||f.name).split("/"); root=root||parts[0];
+    if(JUNK.test(f.name)||parts.slice(1).some(x=>x.startsWith("."))) continue;
+    if(f.size>MAX_MB*1048576){ big++; continue }
+    const title=(parts.slice(1,-1).join(" / ")||root).slice(0,120);
+    if(!groups.has(title)) groups.set(title,[]);
+    groups.get(title).push(f);
+  }
+  let count=0; groups.forEach(g=>count+=g.length);
+  return {root,groups,big,count};
+}
+async function uploadOne(postId,file){
+  const safe=file.name.replace(/[^\w.\-]+/g,"_"), path=`${postId}/${Date.now()}_${safe}`;
+  const up=await sb.storage.from(BUCKET).upload(path,file,{contentType:file.type||undefined});
+  if(up.error) throw up.error;
+  const url=sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  const ins=await sb.from("post_files").insert({post_id:postId,file_name:file.name,file_url:url,file_path:path});
+  if(ins.error){ await sb.storage.from(BUCKET).remove([path]); throw ins.error }
+}
+$("dFiles").onchange=()=>{
+  const pl=planDir($("dFiles").files);
+  $("dName").value=pl.root.slice(0,80);
+  $("dInfo").textContent=pl.count?`${pl.count} file${pl.count===1?"":"s"} in ${pl.groups.size} post${pl.groups.size===1?"":"s"}`+(pl.big?`. ${pl.big} over ${MAX_MB} MB will be skipped.`:""):"No usable files in that folder.";
+};
+$("dirForm").onsubmit=async e=>{
+  e.preventDefault(); const f=e.target,btn=e.submitter;
+  const pl=planDir($("dFiles").files), name=$("dName").value.trim().slice(0,80);
+  if(!pl.count||!name) return toast("Pick a folder that has files in it");
+  if(!confirm(`Upload ${pl.count} file(s) in ${pl.groups.size} post(s) to the folder "${name}"?`)) return;
+  btn.disabled=true; const bar=barOf(f),pr=bar.parentElement; pr.style.display="block"; bar.style.width="0";
+  let done=0; const failed=[];
+  try{
+    let fold=folders.find(x=>x.name.toLowerCase()===name.toLowerCase());
+    if(!fold){ const r=await sb.from("folders").insert({name}).select().single(); if(r.error) throw r.error; fold=r.data }
+    for(const [title,files] of pl.groups){
+      let post=posts.find(p=>p.folder_id===fold.id&&p.title===title);
+      if(!post){ const r=await sb.from("posts").insert({folder_id:fold.id,title,description:""}).select().single(); if(r.error) throw r.error; post=r.data }
+      for(const file of files){
+        try{ await uploadOne(post.id,file) }catch(err){ failed.push(file.name) }
+        bar.style.width=(++done/pl.count*100)+"%"; $("dInfo").textContent=`Uploading ${done} of ${pl.count}...`;
+      }
+    }
+    f.reset(); $("dInfo").textContent="Each sub-folder becomes one post. Works best on a computer.";
+    toast(failed.length?`${failed.length} file(s) failed: ${failed.slice(0,3).join(", ")}`:"Folder uploaded");
+    location.hash=fold.id; await load();
+  }catch(err){ toast(err.message) }
+  setTimeout(()=>pr.style.display="none",600); btn.disabled=false;
 };
 $("posts").onclick=async e=>{
   const vb=e.target.closest("[data-view]"), db=e.target.closest("[data-dl]");
